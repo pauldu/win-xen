@@ -50,6 +50,7 @@ __user_code;
 #define CLASS_KEY   "SYSTEM\\CurrentControlSet\\Control\\Class"
 
 #define SERVICE_KEY(_Name)   "SYSTEM\\CurrentControlSet\\Services\\" ## _Name
+#define PARAMETERS_KEY(_Name)   SERVICE_KEY(_Name) ## "\\Parameters"
 
 static VOID
 #pragma prefast(suppress:6262) // Function uses '1036' bytes of stack: exceeds /analyze:stacksize'1024'
@@ -710,7 +711,6 @@ GetActiveDeviceInstance(
     OUT PTCHAR  *DeviceInstance
     )
 {
-    HKEY        ServiceKey;
     HKEY        ParametersKey;
     DWORD       MaxValueLength;
     DWORD       ActiveDeviceInstanceLength;
@@ -718,24 +718,18 @@ GetActiveDeviceInstance(
     DWORD       Type;
     HRESULT     Error;
 
-    Error = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-                         SERVICE_KEY("XEN"),
-                         0,
-                         KEY_READ,
-                         &ServiceKey);
+    Error = RegCreateKeyEx(HKEY_LOCAL_MACHINE,
+                           PARAMETERS_KEY("XEN"),
+                           0,
+                           NULL,
+                           REG_OPTION_NON_VOLATILE,
+                           KEY_ALL_ACCESS,
+                           NULL,
+                           &ParametersKey,
+                           NULL);
     if (Error != ERROR_SUCCESS) {
         SetLastError(Error);
         goto fail1;
-    }
-
-    Error = RegOpenKeyEx(ServiceKey,
-                         "Parameters",
-                         0,
-                         KEY_READ,
-                         &ParametersKey);
-    if (Error != ERROR_SUCCESS) {
-        SetLastError(Error);
-        goto fail2;
     }
 
     Error = RegQueryInfoKey(ParametersKey,
@@ -752,14 +746,14 @@ GetActiveDeviceInstance(
                             NULL);
     if (Error != ERROR_SUCCESS) {
         SetLastError(Error);
-        goto fail3;
+        goto fail2;
     }
        
     ActiveDeviceInstanceLength = MaxValueLength + sizeof (TCHAR);
 
     ActiveDeviceInstance = malloc(ActiveDeviceInstanceLength);
     if (ActiveDeviceInstance == NULL)
-        goto fail4;
+        goto fail3;
 
     memset(ActiveDeviceInstance, 0, ActiveDeviceInstanceLength);
 
@@ -781,23 +775,16 @@ found:
 
     RegCloseKey(ParametersKey);
 
-    RegCloseKey(ServiceKey);
-
     *DeviceInstance = ActiveDeviceInstance;
     return TRUE;
-
-fail4:
-    Log("fail4");
 
 fail3:
     Log("fail3");
 
-    RegCloseKey(ParametersKey);
-
 fail2:
     Log("fail2");
 
-    RegCloseKey(ServiceKey);
+    RegCloseKey(ParametersKey);
 
 fail1:
     Error = GetLastError();
@@ -820,7 +807,6 @@ SetActiveDeviceInstance(
 {
     PTCHAR      DeviceName;
     BOOLEAN     Success;
-    HKEY        ServiceKey;
     HKEY        ParametersKey;
     HRESULT     Error;
 
@@ -851,23 +837,13 @@ SetActiveDeviceInstance(
     }
 
     Error = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-                         SERVICE_KEY("XEN"),
-                         0,
-                         KEY_READ,
-                         &ServiceKey);
-    if (Error != ERROR_SUCCESS) {
-        SetLastError(Error);
-        goto fail2;
-    }
-
-    Error = RegOpenKeyEx(ServiceKey,
-                         "Parameters",
+                         PARAMETERS_KEY("XEN"),
                          0,
                          KEY_ALL_ACCESS,
                          &ParametersKey);
     if (Error != ERROR_SUCCESS) {
         SetLastError(Error);
-        goto fail3;
+        goto fail2;
     }
 
     Error = RegSetValueEx(ParametersKey,
@@ -878,25 +854,18 @@ SetActiveDeviceInstance(
                           (DWORD)(strlen(DeviceInstance) + sizeof (TCHAR)));
     if (Error != ERROR_SUCCESS) {
         SetLastError(Error);
-        goto fail4;
+        goto fail3;
     }
 
     RegCloseKey(ParametersKey);
 
-    RegCloseKey(ServiceKey);
-
 done:
     return TRUE;
-
-fail4:
-    Log("fail4");
-
-    RegCloseKey(ParametersKey);
 
 fail3:
     Log("fail3");
 
-    RegCloseKey(ServiceKey);
+    RegCloseKey(ParametersKey);
 
 fail2:
     Log("fail2");
@@ -920,52 +889,34 @@ ClearActiveDeviceInstance(
     VOID
     )
 {
-    HKEY        ServiceKey;
     HKEY        ParametersKey;
     HRESULT     Error;
 
     Error = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-                         SERVICE_KEY("XEN"),
-                         0,
-                         KEY_READ,
-                         &ServiceKey);
-    if (Error != ERROR_SUCCESS) {
-        SetLastError(Error);
-        goto fail1;
-    }
-
-    Error = RegOpenKeyEx(ServiceKey,
-                         "Parameters",
+                         PARAMETERS_KEY("XEN"),
                          0,
                          KEY_ALL_ACCESS,
                          &ParametersKey);
     if (Error != ERROR_SUCCESS) {
         SetLastError(Error);
-        goto fail2;
+        goto fail1;
     }
 
     Error = RegDeleteValue(ParametersKey,
                            "ActiveDeviceInstance");
     if (Error != ERROR_SUCCESS) {
         SetLastError(Error);
-        goto fail3;
+        goto fail2;
     }
 
     RegCloseKey(ParametersKey);
 
-    RegCloseKey(ServiceKey);
-
     return TRUE;
-
-fail3:
-    Log("fail3");
-
-    RegCloseKey(ParametersKey);
 
 fail2:
     Log("fail2");
 
-    RegCloseKey(ServiceKey);
+    RegCloseKey(ParametersKey);
 
 fail1:
     Error = GetLastError();
