@@ -37,7 +37,7 @@
 #include "bus.h"
 #include "fdo.h"
 #include "pdo.h"
-#include "log.h"
+#include "debug.h"
 #include "assert.h"
 
 typedef struct _XEN_BUS_CONTEXT {

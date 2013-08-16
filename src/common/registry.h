@@ -29,8 +29,8 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _XEN_REGISTRY_H
-#define _XEN_REGISTRY_H
+#ifndef _REGISTRY_H
+#define _REGISTRY_H
 
 #include <ntddk.h>
 
@@ -143,4 +143,4 @@ RegistryCloseKey(
     IN  HANDLE  Key
     );
 
-#endif  // _XEN_REGISTRY_H
+#endif  // _REGISTRY_H

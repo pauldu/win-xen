@@ -29,8 +29,8 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _XEN_MUTEX_H
-#define _XEN_MUTEX_H
+#ifndef _MUTEX_H
+#define _MUTEX_H
 
 #include <ntddk.h>
 
@@ -79,4 +79,4 @@ ReleaseMutex(
     KeSetEvent(&Mutex->Event, IO_NO_INCREMENT, FALSE);
 }
 
-#endif  // _XEN_MUTEX_H
+#endif  // _MUTEX_H

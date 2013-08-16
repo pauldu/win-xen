@@ -29,12 +29,10 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _XEN_NAMES_H_
-#define _XEN_NAMES_H_
+#ifndef _NAMES_H_
+#define _NAMES_H_
 
 #include <ntddk.h>
-
-#include "types.h"
 
 static FORCEINLINE const CHAR *
 PowerTypeName(
@@ -152,35 +150,6 @@ PowerMinorFunctionName(
     }
 
 #undef  _POWER_MINOR_FUNCTION_NAME
-}
-
-static FORCEINLINE const CHAR *
-PnpDeviceStateName(
-    IN  DEVICE_PNP_STATE    State
-    )
-{
-#define _PNP_DEVICE_STATE_NAME(_State) \
-    case  _State:               \
-        return #_State;
-
-    switch (State) {
-    _PNP_DEVICE_STATE_NAME(Invalid);
-    _PNP_DEVICE_STATE_NAME(Present);
-    _PNP_DEVICE_STATE_NAME(Enumerated);
-    _PNP_DEVICE_STATE_NAME(Added);
-    _PNP_DEVICE_STATE_NAME(Started);
-    _PNP_DEVICE_STATE_NAME(StopPending);
-    _PNP_DEVICE_STATE_NAME(Stopped);
-    _PNP_DEVICE_STATE_NAME(RemovePending);
-    _PNP_DEVICE_STATE_NAME(SurpriseRemovePending);
-    _PNP_DEVICE_STATE_NAME(Deleted);
-    default:
-        break;
-    }
-
-    return "UNKNOWN";
-
-#undef  _STATE_NAME
 }
 
 static FORCEINLINE const CHAR *
@@ -315,4 +284,4 @@ InterfaceTypeName(
 #undef  _INTERFACE_TYPE_NAME
 }
 
-#endif // _XEN_NAMES_H_
+#endif // _NAMES_H_

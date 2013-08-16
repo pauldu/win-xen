@@ -45,7 +45,7 @@
 #include "driver.h"
 #include "thread.h"
 #include "registry.h"
-#include "log.h"
+#include "debug.h"
 #include "assert.h"
 
 #define PDO_TAG 'ODP'

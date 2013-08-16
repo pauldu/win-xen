@@ -37,7 +37,7 @@
 #include "pdo.h"
 #include "driver.h"
 #include "registry.h"
-#include "log.h"
+#include "debug.h"
 #include "assert.h"
 #include "version.h"
 
@@ -274,10 +274,12 @@ done:
     return STATUS_SUCCESS;
 
 fail3:
-    ExFreePool(InstanceID);
+    if (InstanceID != NULL)
+        ExFreePool(InstanceID);
 
 fail2:
-    ExFreePool(DeviceID);
+    if (DeviceID != NULL)
+        ExFreePool(DeviceID);
 
 fail1:
     RegistryFreeSzValue(ActiveDeviceInstance);
@@ -349,7 +351,7 @@ DriverEntry(
 
     ExInitializeDriverRuntime(DrvRtPoolNxOptIn);
 
-    LogEnable();
+    __EnableDbgPrint();
 
     Trace("====>\n");
 

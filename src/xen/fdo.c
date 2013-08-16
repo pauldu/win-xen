@@ -45,7 +45,7 @@
 #include "mutex.h"
 #include "hypercall.h"
 #include "driver.h"
-#include "log.h"
+#include "debug.h"
 #include "assert.h"
 
 #define FDO_TAG 'ODF'

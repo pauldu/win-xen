@@ -29,12 +29,12 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _XEN_ASSERT_H
-#define _XEN_ASSERT_H
+#ifndef _ASSERT_H
+#define _ASSERT_H
 
 #include <ntddk.h>
 
-#include "log.h"
+#include "debug.h"
 
 static FORCEINLINE VOID
 __BugCheck(
@@ -170,5 +170,4 @@ _IsZeroMemory(
 #define IMPLY(_X, _Y)   (!(_X) || (_Y))
 #define EQUIV(_X, _Y)   (IMPLY((_X), (_Y)) && IMPLY((_Y), (_X)))
 
-#endif  // _XEN_ASSERT_H
-
+#endif  // _ASSERT_H

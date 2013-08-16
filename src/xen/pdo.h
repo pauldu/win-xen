@@ -35,7 +35,7 @@
 #include <ntddk.h>
 
 #include "driver.h"
-#include "types.h"
+#include "device.h"
 
 extern VOID
 PdoSetDevicePnpState(

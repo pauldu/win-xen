@@ -33,7 +33,7 @@
 #include <util.h>
 
 #include "registry.h"
-#include "log.h"
+#include "debug.h"
 #include "assert.h"
 
 #define REGISTRY_POOL 'GERX'
