@@ -48,7 +48,7 @@ xen.sys=0,,
 xen_coinst.dll=0,,
 
 [Xen_Copyfiles]
-xen_@MAJOR_VERSION@_@MINOR_VERSION@_@MICRO_VERSION@_@BUILD_NUMBER@.sys,xen.sys
+xen.sys
 
 [CoInst_CopyFiles]
 xen_coinst_@MAJOR_VERSION@_@MINOR_VERSION@_@MICRO_VERSION@_@BUILD_NUMBER@.dll,xen_coinst.dll
@@ -75,7 +75,7 @@ DisplayName=%XenDesc%
 ServiceType=%SERVICE_KERNEL_DRIVER% 
 StartType=%SERVICE_DEMAND_START% 
 ErrorControl=%SERVICE_ERROR_NORMAL% 
-ServiceBinary=%12%\xen_@MAJOR_VERSION@_@MINOR_VERSION@_@MICRO_VERSION@_@BUILD_NUMBER@.sys 
+ServiceBinary=%12%\xen.sys 
 LoadOrderGroup="Boot Bus Extender"
 AddReg = Xen_Parameters
 

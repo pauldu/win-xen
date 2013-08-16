@@ -36,6 +36,8 @@
 #include "fdo.h"
 #include "pdo.h"
 #include "driver.h"
+#include "log.h"
+#include "system.h"
 #include "registry.h"
 #include "debug.h"
 #include "assert.h"
@@ -83,6 +85,8 @@ DriverUnload(
     }
 
     RegistryTeardown();
+
+    LogTeardown();
 
 done:
     Driver.DriverObject = NULL;
@@ -355,15 +359,18 @@ DriverEntry(
 
     Trace("====>\n");
 
+    Driver.DriverObject = _DriverObject;
+
+    if (*InitSafeBootMode > 0)
+        goto done;
+
+    LogInitialize();
+
     Info("%s (%s)\n",
          MAJOR_VERSION_STR "." MINOR_VERSION_STR "." MICRO_VERSION_STR "." BUILD_NUMBER_STR,
          DAY_STR "/" MONTH_STR "/" YEAR_STR);
 
-    Driver.DriverObject = _DriverObject;
-    Driver.DriverObject->DriverUnload = DriverUnload;
-
-    if (*InitSafeBootMode > 0)
-        goto done;
+    SystemGetInformation();
 
     status = RegistryInitialize(RegistryPath);
     if (!NT_SUCCESS(status))
@@ -379,6 +386,7 @@ DriverEntry(
 
     RegistryCloseKey(ServiceKey);
 
+    Driver.DriverObject->DriverUnload = DriverUnload;
     Driver.DriverObject->DriverExtension->AddDevice = AddDevice;
 
     for (Index = 0; Index <= IRP_MJ_MAXIMUM_FUNCTION; Index++) {

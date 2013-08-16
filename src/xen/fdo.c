@@ -434,8 +434,8 @@ FdoDelegateIrp(
         (VOID) KeWaitForSingleObject(&Event,
                                      Executive,
                                      KernelMode,
-                                     FALSE,
-                                     NULL);
+                                     FALSE, 
+                                    NULL);
         status = SubIrp->IoStatus.Status;
     } else {
         ASSERT3U(status, ==, SubIrp->IoStatus.Status);
@@ -584,14 +584,30 @@ FdoReleaseMutex(
 
 static FORCEINLINE BOOLEAN
 __FdoEnumerate(
-    IN  PXEN_FDO                Fdo
+    IN  PXEN_FDO    Fdo
     )
 {
-    NTSTATUS                    status;
+    BOOLEAN         NeedInvalidate;
 
-    status = PdoCreate(Fdo);
+    Trace("====>\n");
 
-    return (NT_SUCCESS(status)) ? TRUE : FALSE;
+    NeedInvalidate = FALSE;
+
+    __FdoAcquireMutex(Fdo);
+
+    if (IsListEmpty(&Fdo->Dx->ListEntry)) {
+        NTSTATUS    status;
+
+        status = PdoCreate(Fdo);
+        if (NT_SUCCESS(status))
+            NeedInvalidate = TRUE;
+    }
+
+    __FdoReleaseMutex(Fdo);
+
+    Trace("<====\n");
+
+    return NeedInvalidate;
 }
 
 static NTSTATUS
@@ -624,6 +640,9 @@ FdoScan(
         if (ThreadIsAlerted(Self))
             break;
 
+        if (__FdoGetDevicePnpState(Fdo) != Started)
+            goto loop;
+
         NeedInvalidate = __FdoEnumerate(Fdo);
 
         if (NeedInvalidate) {
@@ -632,6 +651,7 @@ FdoScan(
                                         BusRelations);
         }
 
+loop:
         KeSetEvent(&Fdo->ScanEvent, IO_NO_INCREMENT, FALSE);
     }
 
