@@ -43,7 +43,6 @@
 #include "pdo.h"
 #include "thread.h"
 #include "mutex.h"
-#include "hypercall.h"
 #include "driver.h"
 #include "debug.h"
 #include "assert.h"
@@ -75,8 +74,6 @@ struct _XEN_FDO {
     ULONG                       References;
 
     XEN_RESOURCE                Resource[RESOURCE_COUNT];
-
-    XEN_HYPERCALL_INTERFACE     HypercallInterface;
 };
 
 static FORCEINLINE PVOID
@@ -346,22 +343,6 @@ __FdoIsActive(
     )
 {
     return Fdo->Active;
-}
-
-static FORCEINLINE PXEN_HYPERCALL_INTERFACE
-__FdoGetHypercallInterface(
-    IN  PXEN_FDO    Fdo
-    )
-{
-    return &Fdo->HypercallInterface;
-}
-
-PXEN_HYPERCALL_INTERFACE
-FdoGetHypercallInterface(
-    IN  PXEN_FDO    Fdo
-    )
-{
-    return __FdoGetHypercallInterface(Fdo);
 }
 
 __drv_functionClass(IO_COMPLETION_ROUTINE)
@@ -878,7 +859,6 @@ FdoS4ToS3(
     )
 {
     KIRQL           Irql;
-    NTSTATUS        status;
 
     Trace("====>\n");
 
@@ -887,14 +867,6 @@ FdoS4ToS3(
 
     KeRaiseIrql(DISPATCH_LEVEL, &Irql); // Flush out any attempt to use pageable memory
 
-    if (!__FdoIsActive(Fdo))
-        goto done;
-
-    status = HypercallInitialize(&Fdo->HypercallInterface);
-    if (!NT_SUCCESS(status))
-        goto fail1;
-
-done:
     __FdoSetSystemPowerState(Fdo, PowerSystemSleeping3);
 
     KeLowerIrql(Irql);
@@ -902,13 +874,6 @@ done:
     Trace("<====\n");
 
     return STATUS_SUCCESS;
-
-fail1:
-    Error("fail1 (%08x)\n", status);
-
-    KeLowerIrql(Irql);
-
-    return status;
 }
 
 static DECLSPEC_NOINLINE VOID
@@ -921,12 +886,6 @@ FdoS3ToS4(
     ASSERT3U(KeGetCurrentIrql(), ==, PASSIVE_LEVEL);
     ASSERT3U(__FdoGetSystemPowerState(Fdo), ==, PowerSystemSleeping3);
 
-    if (!__FdoIsActive(Fdo))
-        goto done;
-
-    HypercallTeardown(&Fdo->HypercallInterface);
-
-done:
     __FdoSetSystemPowerState(Fdo, PowerSystemHibernate);
 
     Trace("<====\n");
@@ -2498,11 +2457,11 @@ FdoCreate(
 
     __FdoSetName(Fdo);
 
+    __FdoSetActive(Fdo, Active);
+
     InitializeMutex(&Fdo->Mutex);
     InitializeListHead(&Dx->ListEntry);
     Fdo->References = 1;
-
-    __FdoSetActive(Fdo, Active);
 
     Info("%p (%s) %s\n",
          FunctionDeviceObject,
@@ -2577,9 +2536,9 @@ FdoDestroy(
 
     Dx->Fdo = NULL;
 
-    __FdoSetActive(Fdo, FALSE);
-
     RtlZeroMemory(&Fdo->Mutex, sizeof (XEN_MUTEX));
+
+    __FdoSetActive(Fdo, FALSE);
 
     RtlZeroMemory(Fdo->VendorName, MAXNAMELEN);
 

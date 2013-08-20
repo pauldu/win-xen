@@ -77,6 +77,8 @@
 		<ClCompile Include="..\..\src\xen\driver.c" />
 		<ClCompile Include="..\..\src\xen\log.c" />
 		<ClCompile Include="..\..\src\xen\system.c" />
+		<ClCompile Include="..\..\src\xen\module.c" />
+		<ClCompile Include="..\..\src\xen\process.c" />
 		<ClCompile Include="..\..\src\xen\fdo.c" />
 		<ClCompile Include="..\..\src\xen\pdo.c" />
 		<ClCompile Include="..\..\src\xen\bus.c" />

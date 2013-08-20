@@ -41,9 +41,15 @@
 
 #define LOG_BUFFER_SIZE 256
 
-static UCHAR        LogBuffer[LOG_BUFFER_SIZE];
-static ULONG        LogOffset;
-static HIGH_LOCK    LogLock;
+typedef struct _LOG_CONTEXT {
+    LONG        References;
+    BOOLEAN     Enabled;
+    UCHAR       Buffer[LOG_BUFFER_SIZE];
+    ULONG       Offset;
+    HIGH_LOCK   Lock;
+} LOG_CONTEXT, *PLOG_CONTEXT;
+
+static LOG_CONTEXT  LogContext;
 
 static FORCEINLINE
 __drv_maxIRQL(HIGH_LEVEL)
@@ -51,10 +57,10 @@ __drv_raisesIRQL(HIGH_LEVEL)
 __drv_savesIRQL
 KIRQL
 __LogAcquireBuffer(
-    VOID
+    IN  PLOG_CONTEXT    Context
     )
 {
-    return __AcquireHighLock(&LogLock);
+    return __AcquireHighLock(&Context->Lock);
 }
 
 #define LOG_PORT_XEN    0xE9
@@ -64,26 +70,28 @@ static DECLSPEC_NOINLINE VOID
 __drv_maxIRQL(HIGH_LEVEL)
 __drv_requiresIRQL(HIGH_LEVEL)
 __LogReleaseBuffer(
+    IN  PLOG_CONTEXT                Context,
     IN  USHORT                      Port,
     IN  __drv_restoresIRQL KIRQL    Irql
     )
 {
-    __outbytestring(Port, LogBuffer, LogOffset);
+    __outbytestring(Port, Context->Buffer, Context->Offset);
 
-    RtlZeroMemory(LogBuffer, LogOffset);
-    LogOffset = 0;
+    RtlZeroMemory(Context->Buffer, Context->Offset);
+    Context->Offset = 0;
 
-    ReleaseHighLock(&LogLock, Irql);
+    ReleaseHighLock(&Context->Lock, Irql);
 }
 
 static FORCEINLINE VOID
 __LogPut(
-    IN  CHAR    Character
+    IN  PLOG_CONTEXT    Context,
+    IN  CHAR            Character
     )
 {
-    ASSERT(LogOffset < LOG_BUFFER_SIZE);
+    ASSERT(Context->Offset < LOG_BUFFER_SIZE);
 
-    LogBuffer[LogOffset++] = Character;
+    Context->Buffer[Context->Offset++] = Character;
 }
 
 static DECLSPEC_NOINLINE PCHAR
@@ -148,12 +156,13 @@ LogFormatNumber(
 
 static DECLSPEC_NOINLINE VOID
 LogWriteBuffer(
-    IN  LONG        Count,
-    IN  const CHAR  *Format,
-    IN  va_list     Arguments
+    IN  PLOG_CONTEXT    Context, 
+    IN  LONG            Count,
+    IN  const CHAR      *Format,
+    IN  va_list         Arguments
     )
 {
-    CHAR            Character;
+    CHAR                Character;
 
     while ((Character = *Format++) != '\0') {
         UCHAR   Pad = 0;
@@ -163,7 +172,7 @@ LogWriteBuffer(
         BOOLEAN OppositeJustification = FALSE;
         
         if (Character != '%') {
-            __LogPut(Character);
+            __LogPut(Context, Character);
             goto loop;
         }
 
@@ -212,13 +221,13 @@ LogWriteBuffer(
                 WCHAR   Value;
                 Value = va_arg(Arguments, WCHAR);
 
-                __LogPut((CHAR)Value);
+                __LogPut(Context, (CHAR)Value);
             } else { 
                 CHAR    Value;
 
                 Value = va_arg(Arguments, CHAR);
 
-                __LogPut(Value);
+                __LogPut(Context, Value);
             }
             break;
         }
@@ -245,15 +254,15 @@ LogWriteBuffer(
             Length = (ULONG)strlen(Buffer);
             if (!OppositeJustification) {
                 while (Pad > Length) {
-                    __LogPut((ZeroPrefix) ? '0' : ' ');
+                    __LogPut(Context, (ZeroPrefix) ? '0' : ' ');
                     --Pad;
                 }
             }
             for (Index = 0; Index < Length; Index++)
-                __LogPut(Buffer[Index]);
+                __LogPut(Context, Buffer[Index]);
             if (OppositeJustification) {
                 while (Pad > Length) {
-                    __LogPut(' ');
+                    __LogPut(Context, ' ');
                     --Pad;
                 }
             }
@@ -273,17 +282,17 @@ LogWriteBuffer(
 
                 if (OppositeJustification) {
                     while (Pad > Length) {
-                        __LogPut(' ');
+                        __LogPut(Context, ' ');
                         --Pad;
                     }
                 }
 
                 for (Index = 0; Index < Length; Index++)
-                    __LogPut((CHAR)Value[Index]);
+                    __LogPut(Context, (CHAR)Value[Index]);
 
                 if (!OppositeJustification) {
                     while (Pad > Length) {
-                        __LogPut(' ');
+                        __LogPut(Context, ' ');
                         --Pad;
                     }
                 }
@@ -299,17 +308,17 @@ LogWriteBuffer(
 
                 if (OppositeJustification) {
                     while (Pad > Length) {
-                        __LogPut(' ');
+                        __LogPut(Context, ' ');
                         --Pad;
                     }
                 }
 
                 for (Index = 0; Index < Length; Index++)
-                    __LogPut(Value[Index]);
+                    __LogPut(Context, Value[Index]);
 
                 if (!OppositeJustification) {
                     while (Pad > Length) {
-                        __LogPut(' ');
+                        __LogPut(Context, ' ');
                         --Pad;
                     }
                 }
@@ -334,17 +343,17 @@ LogWriteBuffer(
 
                 if (OppositeJustification) {
                     while (Pad > Length) {
-                        __LogPut(' ');
+                        __LogPut(Context, ' ');
                         --Pad;
                     }
                 }
 
                 for (Index = 0; Index < Length; Index++)
-                    __LogPut((CHAR)Buffer[Index]);
+                    __LogPut(Context, (CHAR)Buffer[Index]);
 
                 if (!OppositeJustification) {
                     while (Pad > Length) {
-                        __LogPut(' ');
+                        __LogPut(Context, ' ');
                         --Pad;
                     }
                 }
@@ -364,17 +373,17 @@ LogWriteBuffer(
 
                 if (OppositeJustification) {
                     while (Pad > Length) {
-                        __LogPut(' ');
+                        __LogPut(Context, ' ');
                         --Pad;
                     }
                 }
 
                 for (Index = 0; Index < Length; Index++)
-                    __LogPut(Buffer[Index]);
+                    __LogPut(Context, Buffer[Index]);
 
                 if (!OppositeJustification) {
                     while (Pad > Length) {
-                        __LogPut(' ');
+                        __LogPut(Context, ' ');
                         --Pad;
                     }
                 }
@@ -383,7 +392,7 @@ LogWriteBuffer(
             break;
         }
         default:
-            __LogPut(Character);
+            __LogPut(Context, Character);
             break;
         }
 
@@ -394,39 +403,24 @@ loop:
 }
 
 static FORCEINLINE VOID
-__LogXenCchVPrintf(
-    IN  ULONG       Count,
-    IN  const CHAR  *Format,
-    IN  va_list     Arguments
+__LogPortCchVPrintf(
+    IN  PLOG_CONTEXT    Context, 
+    IN  USHORT          Port,
+    IN  ULONG           Count,
+    IN  const CHAR      *Format,
+    IN  va_list         Arguments
     )
 {
-    KIRQL           Irql;
+    KIRQL               Irql;
 
-    Irql = __LogAcquireBuffer();
+    Irql = __LogAcquireBuffer(Context);
 
-    LogWriteBuffer(__min(Count, LOG_BUFFER_SIZE),
-                  Format,
-                  Arguments);
+    LogWriteBuffer(Context,
+                   __min(Count, LOG_BUFFER_SIZE),
+                   Format,
+                   Arguments);
 
-    __LogReleaseBuffer(LOG_PORT_XEN, Irql);
-}
-
-static FORCEINLINE VOID
-__LogQemuCchVPrintf(
-    IN  ULONG       Count,
-    IN  const CHAR  *Format,
-    IN  va_list     Arguments
-    )
-{
-    KIRQL           Irql;
-
-    Irql = __LogAcquireBuffer();
-
-    LogWriteBuffer(__min(Count, LOG_BUFFER_SIZE),
-                  Format,
-                  Arguments);
-
-    __LogReleaseBuffer(LOG_PORT_QEMU, Irql);
+    __LogReleaseBuffer(Context, Port, Irql);
 }
 
 VOID
@@ -437,13 +431,23 @@ LogCchVPrintf(
     IN  va_list         Arguments
     )
 {
+    PLOG_CONTEXT        Context = &LogContext;
+
     switch (Destination) {
     case LOG_DESTINATION_QEMU:
-        __LogQemuCchVPrintf(Count, Format, Arguments);
+        __LogPortCchVPrintf(Context,
+                            LOG_PORT_QEMU,
+                            Count,
+                            Format,
+                            Arguments);
         break;
 
     case LOG_DESTINATION_XEN:
-        __LogXenCchVPrintf(Count, Format, Arguments);
+        __LogPortCchVPrintf(Context,
+                            LOG_PORT_XEN,
+                            Count,
+                            Format,
+                            Arguments);
         break;
 
     default:
@@ -534,29 +538,50 @@ LogDebugPrint(
     }
 }
 
-BOOLEAN CallbackInstalled;
-
 VOID
 LogTeardown(
     VOID
     )
 {
-    if (CallbackInstalled) {
+    PLOG_CONTEXT    Context = &LogContext;
+
+    if (Context->Enabled) {
         (VOID) DbgSetDebugPrintCallback(LogDebugPrint, FALSE); 
-        CallbackInstalled = FALSE;
+        Context->Enabled = FALSE;
     }
+
+    RtlZeroMemory(&Context->Lock, sizeof (HIGH_LOCK));
+
+    (VOID) InterlockedDecrement(&Context->References);
+
+    ASSERT(IsZeroMemory(Context, sizeof (LOG_CONTEXT)));
 }
 
-VOID
+NTSTATUS
 LogInitialize(
     VOID)
 {
-    InitializeHighLock(&LogLock);
+    PLOG_CONTEXT    Context = &LogContext;
+    ULONG           References;
+    NTSTATUS        status;
 
-    if (!CallbackInstalled) {
-        NTSTATUS    status;
+    References = InterlockedIncrement(&Context->References);
 
-        status = DbgSetDebugPrintCallback(LogDebugPrint, TRUE);
-        CallbackInstalled = NT_SUCCESS(status) ? TRUE : FALSE;
-    }
+    status = STATUS_OBJECTID_EXISTS;
+    if (References != 1)
+        goto fail1;
+
+    InitializeHighLock(&Context->Lock);
+
+    ASSERT(!Context->Enabled);
+
+    status = DbgSetDebugPrintCallback(LogDebugPrint, TRUE);
+    Context->Enabled = NT_SUCCESS(status) ? TRUE : FALSE;
+
+    return STATUS_SUCCESS;
+
+fail1:
+    Error("fail1 (%08x)\n", status);
+
+    return status;
 }

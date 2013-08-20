@@ -38,6 +38,9 @@
 #include "driver.h"
 #include "log.h"
 #include "system.h"
+#include "hypercall.h"
+#include "module.h"
+#include "process.h"
 #include "registry.h"
 #include "debug.h"
 #include "assert.h"
@@ -47,49 +50,102 @@ extern PULONG           InitSafeBootMode;
 
 typedef struct XEN_DRIVER {
     PDRIVER_OBJECT          DriverObject;
-    HANDLE                  ServiceKey;
-    XEN_DRIVER_PARAMETERS   Parameters;
+    HANDLE                  ParametersKey;        
+    XEN_HYPERCALL_INTERFACE HypercallInterface;
 } XEN_DRIVER, *PXEN_DRIVER;
 
 XEN_DRIVER  Driver;
 
-PDRIVER_OBJECT
-DriverGetDriverObject(
+static FORCEINLINE VOID
+__DriverSetDriverObject(
+    IN  PDRIVER_OBJECT  DriverObject
+    )
+{
+    Driver.DriverObject = DriverObject;
+}
+
+static FORCEINLINE PDRIVER_OBJECT
+__DriverGetDriverObject(
     VOID
     )
 {
     return Driver.DriverObject;
 }
 
+PDRIVER_OBJECT
+DriverGetDriverObject(
+    VOID
+    )
+{
+    return __DriverGetDriverObject();
+}
+
+static FORCEINLINE VOID
+__DriverSetParametersKey(
+    IN  HANDLE  Key
+    )
+{
+    Driver.ParametersKey = Key;
+}
+
+static FORCEINLINE HANDLE
+__DriverGetParametersKey(
+    VOID
+    )
+{
+    return Driver.ParametersKey;
+}
+
+HANDLE
+DriverGetParametersKey(
+    VOID
+    )
+{
+    return __DriverGetParametersKey();
+}
+
+PXEN_HYPERCALL_INTERFACE
+DriverGetHypercallInterface(
+    VOID
+    )
+{
+    return &Driver.HypercallInterface;
+}
+
 DRIVER_UNLOAD           DriverUnload;
 
 VOID
 DriverUnload(
-    IN  PDRIVER_OBJECT  _DriverObject
+    IN  PDRIVER_OBJECT  DriverObject
     )
 {
-    ASSERT3P(_DriverObject, ==, Driver.DriverObject);
+    HANDLE              ParametersKey;
+
+    ASSERT3P(DriverObject, ==, __DriverGetDriverObject());
 
     Trace("====>\n");
-
-    Info("%s (%s)\n",
-         MAJOR_VERSION_STR "." MINOR_VERSION_STR "." MICRO_VERSION_STR "." BUILD_NUMBER_STR,
-         DAY_STR "/" MONTH_STR "/" YEAR_STR);
 
     if (*InitSafeBootMode > 0)
         goto done;
 
-    if (Driver.Parameters.Key != NULL) {
-        RegistryCloseKey(Driver.Parameters.Key);
-        Driver.Parameters.Key = NULL;
+    ParametersKey = __DriverGetParametersKey();
+    if (ParametersKey != NULL) {
+        RegistryCloseKey(ParametersKey);
+        __DriverSetParametersKey(NULL);
     }
 
-    RegistryTeardown();
+    ProcessTeardown();
+
+    ModuleTeardown();
+
+    HypercallTeardown(&Driver.HypercallInterface);
 
     LogTeardown();
 
+    RegistryTeardown();
+
 done:
-    Driver.DriverObject = NULL;
+    __DriverSetDriverObject(NULL);
 
     ASSERT(IsZeroMemory(&Driver, sizeof (XEN_DRIVER)));
 
@@ -199,10 +255,11 @@ DRIVER_ADD_DEVICE   AddDevice;
 NTSTATUS
 #pragma prefast(suppress:28152) // Does not clear DO_DEVICE_INITIALIZING
 AddDevice(
-    IN  PDRIVER_OBJECT  _DriverObject,
+    IN  PDRIVER_OBJECT  DriverObject,
     IN  PDEVICE_OBJECT  DeviceObject
     )
 {
+    HANDLE              ParametersKey;
     PANSI_STRING        ActiveDeviceInstance;
     BOOLEAN             Active;
     PWCHAR              DeviceID;
@@ -211,11 +268,13 @@ AddDevice(
     ULONG               Length;
     NTSTATUS            status;
 
-    ASSERT3P(_DriverObject, ==, Driver.DriverObject);
+    ASSERT3P(DriverObject, ==, __DriverGetDriverObject());
+
+    ParametersKey = __DriverGetParametersKey();
 
     ActiveDeviceInstance = NULL;
-    if (Driver.Parameters.Key != NULL) {
-        status = RegistryQuerySzValue(Driver.Parameters.Key,
+    if (ParametersKey != NULL) {
+        status = RegistryQuerySzValue(ParametersKey,
                                       "ActiveDeviceInstance",
                                       &ActiveDeviceInstance);
         ASSERT(IMPLY(!NT_SUCCESS(status), ActiveDeviceInstance == NULL));
@@ -342,16 +401,16 @@ DRIVER_INITIALIZE   DriverEntry;
 
 NTSTATUS
 DriverEntry(
-    IN  PDRIVER_OBJECT  _DriverObject,
-    IN  PUNICODE_STRING RegistryPath
+    IN  PDRIVER_OBJECT      DriverObject,
+    IN  PUNICODE_STRING     RegistryPath
     )
 {
-    HANDLE              ServiceKey;
-    HANDLE              ParametersKey;
-    ULONG               Index;
-    NTSTATUS            status;
+    HANDLE                  ServiceKey;
+    HANDLE                  ParametersKey;
+    ULONG                   Index;
+    NTSTATUS                status;
 
-    ASSERT3P(Driver.DriverObject, ==, NULL);
+    ASSERT3P(__DriverGetDriverObject(), ==, NULL);
 
     ExInitializeDriverRuntime(DrvRtPoolNxOptIn);
 
@@ -359,12 +418,14 @@ DriverEntry(
 
     Trace("====>\n");
 
-    Driver.DriverObject = _DriverObject;
+    __DriverSetDriverObject(DriverObject);
 
     if (*InitSafeBootMode > 0)
         goto done;
 
-    LogInitialize();
+    status = LogInitialize();
+    if (!NT_SUCCESS(status))
+        goto fail1;
 
     Info("%s (%s)\n",
          MAJOR_VERSION_STR "." MINOR_VERSION_STR "." MICRO_VERSION_STR "." BUILD_NUMBER_STR,
@@ -372,17 +433,29 @@ DriverEntry(
 
     SystemGetInformation();
 
-    status = RegistryInitialize(RegistryPath);
-    if (!NT_SUCCESS(status))
-        goto fail1;
-
-    status = RegistryOpenServiceKey(KEY_READ, &ServiceKey);
+    status = HypercallInitialize(&Driver.HypercallInterface);
     if (!NT_SUCCESS(status))
         goto fail2;
 
+    status = ModuleInitialize();
+    if (!NT_SUCCESS(status))
+        goto fail3;
+
+    status = ProcessInitialize();
+    if (!NT_SUCCESS(status))
+        goto fail4;
+
+    status = RegistryInitialize(RegistryPath);
+    if (!NT_SUCCESS(status))
+        goto fail5;
+
+    status = RegistryOpenServiceKey(KEY_READ, &ServiceKey);
+    if (!NT_SUCCESS(status))
+        goto fail6;
+
     status = RegistryOpenSubKey(ServiceKey, "Parameters", KEY_READ, &ParametersKey);
     if (NT_SUCCESS(status))
-        Driver.Parameters.Key = ParametersKey;
+        __DriverSetParametersKey(ParametersKey);
 
     RegistryCloseKey(ServiceKey);
 
@@ -400,15 +473,35 @@ done:
 
     return STATUS_SUCCESS;
 
+fail6:
+    Error("fail6\n");
+
+    RegistryTeardown();
+
+fail5:
+    Error("fail5\n");
+
+    ProcessTeardown();
+
+fail4:
+    Error("fail4\n");
+
+    ModuleTeardown();
+
+fail3:
+    Error("fail3\n");
+
+    HypercallTeardown(&Driver.HypercallInterface);
+
 fail2:
     Error("fail2\n");
 
-    RegistryTeardown();
+    LogTeardown();
 
 fail1:
     Error("fail1 (%08x)\n", status);
 
-    Driver.DriverObject = NULL;
+    __DriverSetDriverObject(NULL);
 
     ASSERT(IsZeroMemory(&Driver, sizeof (XEN_DRIVER)));
 

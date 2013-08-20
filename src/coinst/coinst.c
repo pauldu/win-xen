@@ -1312,7 +1312,7 @@ __DifInstallPostProcess(
     HRESULT                         Error;
     PTCHAR                          DeviceInstance;
     PTCHAR                          ActiveDeviceInstance;
-    WORD                            DeviceId;
+    DWORD                           DeviceId;
     BOOLEAN                         Active;
     BOOLEAN                         Success;
 
@@ -1348,7 +1348,7 @@ __DifInstallPostProcess(
 
     Success = SetFriendlyName(DeviceInfoSet,
                               DeviceInfoData,
-                              DeviceId,
+                              (WORD)DeviceId,
                               Active);
     if (!Success)
         goto fail5;

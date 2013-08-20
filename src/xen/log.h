@@ -68,7 +68,7 @@ LogPrintf(
     ...
     );
 
-extern VOID
+extern NTSTATUS
 LogInitialize(
     VOID
     );

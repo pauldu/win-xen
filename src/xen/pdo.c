@@ -44,11 +44,14 @@
 #include "bus.h"
 #include "driver.h"
 #include "thread.h"
+#include "hypercall.h"
 #include "registry.h"
 #include "debug.h"
 #include "assert.h"
 
 #define PDO_TAG 'ODP'
+
+#define MAXNAMELEN  128
 
 struct _XEN_PDO {
     PXEN_DX                     Dx;
@@ -214,42 +217,39 @@ PdoIsMissing(
 }
 
 static FORCEINLINE NTSTATUS
-__PdoSetRevision(
-    IN  PXEN_PDO    Pdo
+__PdoSetName(
+    IN  PXEN_PDO    Pdo,
+    IN  PCHAR       Name         
     )
 {
-    HANDLE          ServiceKey;
+    PXEN_DX         Dx = Pdo->Dx;
     HANDLE          ParametersKey;
+    ULONG           Revision = 0;
     NTSTATUS        status;
 
-    status = RegistryOpenServiceKey(KEY_READ, &ServiceKey);
-    if (!NT_SUCCESS(status))
-        goto fail1;
+    ParametersKey = DriverGetParametersKey();
 
-    status = RegistryOpenSubKey(ServiceKey, "Parameters", KEY_READ, &ParametersKey);
-    if (!NT_SUCCESS(status))
-        goto fail2;
+    status = STATUS_UNSUCCESSFUL;
+    if (ParametersKey == NULL)
+        goto fail1;
 
     status = RegistryQueryDwordValue(ParametersKey,
                                      "Revision",
-                                     &Pdo->Revision);
+                                     &Revision);
     if (!NT_SUCCESS(status))
-        goto fail3;
+        goto fail2;
 
-    RegistryCloseKey(ParametersKey);
-    RegistryCloseKey(ServiceKey);
+    status = RtlStringCbPrintfA(Dx->Name,
+                                MAXNAMELEN,
+                                "VEN_%s&REV_%08X",
+                                Name,
+                                Revision);
+    ASSERT(NT_SUCCESS(status));
 
     return STATUS_SUCCESS;
 
-fail3:
-    Error("fail3\n");
-
-    RegistryCloseKey(ParametersKey);
-
 fail2:
     Error("fail2\n");
-
-    RegistryCloseKey(ServiceKey);
 
 fail1:
     Error("fail1 (%08x)\n", status);
@@ -257,12 +257,22 @@ fail1:
     return status;
 }
 
-static FORCEINLINE ULONG
-__PdoGetRevision(
+static FORCEINLINE PCHAR
+__PdoGetName(
     IN  PXEN_PDO    Pdo
     )
 {
-    return Pdo->Revision;
+    PXEN_DX         Dx = Pdo->Dx;
+
+    return Dx->Name;
+}
+
+PCHAR
+PdoGetName(
+    IN  PXEN_PDO    Pdo
+    )
+{
+    return __PdoGetName(Pdo);
 }
 
 static FORCEINLINE PDEVICE_OBJECT
@@ -313,32 +323,6 @@ __PdoGetFdo(
     )
 {
     return Pdo->Fdo;
-}
-
-static FORCEINLINE PCHAR
-__PdoGetVendorName(
-    IN  PXEN_PDO    Pdo
-    )
-{
-    return FdoGetVendorName(__PdoGetFdo(Pdo));
-}
-
-static FORCEINLINE PXEN_HYPERCALL_INTERFACE
-__PdoGetHypercallInterface(
-    IN  PXEN_PDO    Pdo
-    )
-{
-    UNREFERENCED_PARAMETER(Pdo);
-
-    return FdoGetHypercallInterface(__PdoGetFdo(Pdo));
-}
-
-PXEN_HYPERCALL_INTERFACE
-PdoGetHypercallInterface(
-    IN  PXEN_PDO    Pdo
-    )
-{
-    return __PdoGetHypercallInterface(Pdo);
 }
 
 PDMA_ADAPTER
@@ -868,6 +852,8 @@ PdoQueryHypercallInterface(
     PINTERFACE              Interface;
     NTSTATUS                status;
 
+    UNREFERENCED_PARAMETER(Pdo);
+
     status = Irp->IoStatus.Status;        
 
     StackLocation = IoGetCurrentIrpStackLocation(Irp);
@@ -884,7 +870,7 @@ PdoQueryHypercallInterface(
 
     Interface->Size = sizeof (INTERFACE);
     Interface->Version = HYPERCALL_INTERFACE_VERSION;
-    Interface->Context = __PdoGetHypercallInterface(Pdo);
+    Interface->Context = DriverGetHypercallInterface();
     Interface->InterfaceReference = NULL;
     Interface->InterfaceDereference = NULL;
 
@@ -1266,9 +1252,8 @@ PdoQueryId(
 
         status = RtlStringCbPrintfW(Buffer,
                                     MAX_DEVICE_ID_LEN,
-                                    L"XEN\\VEN_%hs&REV_%08X",
-                                    __PdoGetVendorName(Pdo),
-                                    __PdoGetRevision(Pdo));
+                                    L"XEN\\%hs",
+                                    __PdoGetName(Pdo));
         ASSERT(NT_SUCCESS(status));
 
         Buffer += wcslen(Buffer);
@@ -1284,9 +1269,8 @@ PdoQueryId(
         Length = MAX_DEVICE_ID_LEN;
         status = RtlStringCbPrintfW(Buffer,
                                     Length,
-                                    L"XEN\\VEN_%hs&REV_%08X",
-                                    __PdoGetVendorName(Pdo),
-                                    __PdoGetRevision(Pdo));
+                                    L"XEN\\%hs",
+                                    __PdoGetName(Pdo));
         ASSERT(NT_SUCCESS(status));
 
         Buffer += wcslen(Buffer);
@@ -1896,7 +1880,13 @@ PdoCreate(
     if (!NT_SUCCESS(status))
         goto fail5;
 
-    Info("%p\n", PhysicalDeviceObject);
+    status = __PdoSetName(Pdo, FdoGetVendorName(Fdo));
+    if (!NT_SUCCESS(status))
+        goto fail6;
+
+    Info("%p (%s)\n",
+         PhysicalDeviceObject,
+         __PdoGetName(Pdo));
 
     Dx->Pdo = Pdo;
     PhysicalDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
@@ -1904,6 +1894,13 @@ PdoCreate(
     __PdoLink(Pdo, Fdo);
 
     return STATUS_SUCCESS;
+
+fail6:
+    Error("fail6\n");
+
+    ThreadAlert(Pdo->DevicePowerThread);
+    ThreadJoin(Pdo->DevicePowerThread);
+    Pdo->DevicePowerThread = NULL;
 
 fail5:
     Error("fail5\n");
@@ -1951,8 +1948,9 @@ PdoDestroy(
 
     __PdoUnlink(Pdo);
 
-    Info("%p (%s)\n",
+    Info("%p (%s) (%s)\n",
          PhysicalDeviceObject,
+         __PdoGetName(Pdo),
          Pdo->Reason);
     Pdo->Reason = NULL;
 

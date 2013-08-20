@@ -213,8 +213,8 @@ HypercallInitialize(
     ULONG                           ECX = 'DEAD';
     ULONG                           EDX = 'DEAD';
     PFN_NUMBER                      Pfn[MAXIMUM_HYPERCALL_PFN_COUNT];
-    ULONG                           Index;
     ULONG                           Count;
+    ULONG                           Index;
     ULONG                           Msr;
     NTSTATUS                        status;
 
@@ -279,6 +279,8 @@ HypercallInitialize(
     return STATUS_SUCCESS;
 
 fail2:
+    Context->Leaf = 0;
+
     ASSERT(IsZeroMemory(Context, sizeof (XEN_HYPERCALL_CONTEXT)));
     __HypercallFree(Context);
 

@@ -29,57 +29,19 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _XEN_DRIVER_H
-#define _XEN_DRIVER_H
+#ifndef _XEN_MODULE_H
+#define _XEN_MODULE_H
 
-#include "hypercall.h"
+#include <ntddk.h>
+#include <aux_klib.h>
 
-extern PDRIVER_OBJECT
-DriverGetDriverObject(
+extern NTSTATUS
+ModuleInitialize(
+    VOID);
+
+extern VOID
+ModuleTeardown(
     VOID
     );
 
-extern HANDLE
-DriverGetParametersKey(
-    VOID
-    );
-
-extern PXEN_HYPERCALL_INTERFACE
-DriverGetHypercallInterface(
-    VOID
-    );
-
-typedef struct _XEN_FDO XEN_FDO, *PXEN_FDO;
-typedef struct _XEN_PDO XEN_PDO, *PXEN_PDO;
-
-#include "pdo.h"
-#include "fdo.h"
-
-#define MAX_DEVICE_ID_LEN   200
-
-#pragma warning(push)
-#pragma warning(disable:4201) // nonstandard extension used : nameless struct/union
-
-typedef struct _XEN_DX {
-    PDEVICE_OBJECT      DeviceObject;
-    DEVICE_OBJECT_TYPE  Type;
-
-    DEVICE_PNP_STATE    DevicePnpState;
-    DEVICE_PNP_STATE    PreviousDevicePnpState;
-
-    SYSTEM_POWER_STATE  SystemPowerState;
-    DEVICE_POWER_STATE  DevicePowerState;
-
-    CHAR                Name[MAX_DEVICE_ID_LEN];
-
-    LIST_ENTRY          ListEntry;
-
-    union {
-        PXEN_FDO        Fdo;
-        PXEN_PDO        Pdo;
-    };
-} XEN_DX, *PXEN_DX;
-
-#pragma warning(pop)
-
-#endif  // _XEN_DRIVER_H
+#endif  // _XEN_MODULE_H
